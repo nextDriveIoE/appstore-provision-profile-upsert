@@ -1,0 +1,93 @@
+name: Test Provisioning Profile Upsert
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile_name:
+        description: 'Provisioning Profile 名稱'
+        required: true
+        type: string
+        default: 'Test Profile'
+      
+      cert_type:
+        description: '證書類型'
+        required: true
+        type: choice
+        options:
+          - 'IOS_DEVELOPMENT'
+          - 'IOS_DISTRIBUTION'
+          - 'MAC_APP_DEVELOPMENT'
+          - 'MAC_APP_DISTRIBUTION'
+        default: 'IOS_DEVELOPMENT'
+      
+      bundle_id:
+        description: 'Bundle ID'
+        required: true
+        type: string
+        default: 'com.nextdrive.testapp'
+      
+      profile_type:
+        description: 'Profile 類型'
+        required: true
+        type: choice
+        options:
+          - 'IOS_APP_DEVELOPMENT'
+          - 'IOS_APP_STORE'
+          - 'IOS_APP_ADHOC'
+          - 'MAC_APP_DEVELOPMENT'
+          - 'MAC_APP_STORE'
+        default: 'IOS_APP_DEVELOPMENT'
+
+jobs:
+  test-upsert:
+    runs-on: ubuntu-latest
+    outputs:
+      profile-id: ${{ steps.update-profile.outputs.profile_id }}
+      cert-id: ${{ steps.update-profile.outputs.cert_id }}
+      success: ${{ steps.update-profile.outputs.success }}
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Update Provisioning Profile
+        id: update-profile
+        uses: ./
+        with:
+          profile_name: ${{ github.event.inputs.profile_name }}
+          cert_type: ${{ github.event.inputs.cert_type }}
+          issuer_id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          key_id: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          private_key_base64: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY_BASE64 }}
+          bundle_id: ${{ github.event.inputs.bundle_id }}
+          profile_type: ${{ github.event.inputs.profile_type }}
+      
+      - name: Display Results
+        run: |
+          echo "📋 執行結果："
+          echo "- 成功狀態: ${{ steps.update-profile.outputs.success }}"
+          echo "- Profile ID: ${{ steps.update-profile.outputs.profile_id }}"
+          echo "- Certificate ID: ${{ steps.update-profile.outputs.cert_id }}"
+          
+          if [[ "${{ steps.update-profile.outputs.success }}" == "true" ]]; then
+            echo "✅ Provisioning Profile 更新成功！"
+          else
+            echo "❌ Provisioning Profile 更新失敗！"
+            exit 1
+          fi
+
+  # 示範如何在後續 job 中使用結果
+  use-results:
+    needs: test-upsert
+    runs-on: ubuntu-latest
+    if: needs.test-upsert.outputs.success == 'true'
+    
+    steps:
+      - name: Use Profile Information
+        run: |
+          echo "🎉 可以使用更新後的 Provisioning Profile："
+          echo "Profile ID: ${{ needs.test-upsert.outputs.profile-id }}"
+          echo "Certificate ID: ${{ needs.test-upsert.outputs.cert-id }}"
+          
+          # 這裡可以加入實際的建置步驟
+          echo "現在可以使用此 Profile 進行 iOS 應用程式建置..."

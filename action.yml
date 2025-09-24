@@ -1,0 +1,74 @@
+name: 'App Store Provision Profile Upsert'
+description: '使用 Applaud 套件更新或建立 App Store Provisioning Profile'
+author: 'NextDrive IoE'
+
+inputs:
+  profile_name:
+    description: 'Provisioning Profile 名稱'
+    required: true
+  
+  cert_type:
+    description: '證書類型 (例: IOS_DEVELOPMENT, IOS_DISTRIBUTION, MAC_APP_DEVELOPMENT, etc.)'
+    required: true
+  
+  issuer_id:
+    description: 'App Store Connect API Issuer ID'
+    required: true
+  
+  key_id:
+    description: 'App Store Connect API Key ID'
+    required: true
+  
+  private_key_base64:
+    description: 'App Store Connect API Private Key (Base64 編碼)'
+    required: true
+  
+  bundle_id:
+    description: 'App Bundle ID (用於建立 Provisioning Profile)'
+    required: true
+  
+  profile_type:
+    description: 'Provisioning Profile 類型 (例: IOS_APP_DEVELOPMENT, IOS_APP_STORE, etc.)'
+    required: true
+    default: 'IOS_APP_DEVELOPMENT'
+
+outputs:
+  profile_id:
+    description: '建立或更新的 Provisioning Profile ID'
+  
+  cert_id:
+    description: '使用的證書 ID'
+  
+  success:
+    description: '操作是否成功'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      shell: bash
+      run: |
+        pip install applaud cryptography
+    
+    - name: Run Provision Profile Upsert
+      shell: bash
+      run: |
+        python ${{ github.action_path }}/src/main.py
+      env:
+        PROFILE_NAME: ${{ inputs.profile_name }}
+        CERT_TYPE: ${{ inputs.cert_type }}
+        ISSUER_ID: ${{ inputs.issuer_id }}
+        KEY_ID: ${{ inputs.key_id }}
+        PRIVATE_KEY_BASE64: ${{ inputs.private_key_base64 }}
+        BUNDLE_ID: ${{ inputs.bundle_id }}
+        PROFILE_TYPE: ${{ inputs.profile_type }}
+        GITHUB_OUTPUT: ${{ env.GITHUB_OUTPUT }}
+
+branding:
+  icon: 'smartphone'
+  color: 'blue'
