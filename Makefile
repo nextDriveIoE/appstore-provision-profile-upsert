@@ -1,4 +1,4 @@
-.PHONY: help install test local-test clean lint format check
+.PHONY: help install test local-test clean lint format check setup-env
 
 # 默認目標
 help:
@@ -7,6 +7,7 @@ help:
 	@echo ""
 	@echo "可用命令："
 	@echo "  install     - 安裝依賴套件"
+	@echo "  setup-env   - 建立 .env 檔案範本"
 	@echo "  test        - 執行本地測試"
 	@echo "  lint        - 程式碼檢查"
 	@echo "  format      - 程式碼格式化"
@@ -19,13 +20,27 @@ install:
 	pip install -r requirements.txt
 	pip install flake8 black pylint
 
+# 建立 .env 檔案
+setup-env:
+	@if [ -f .env ]; then \
+		echo "⚠️  .env 檔案已存在，不覆蓋"; \
+	else \
+		echo "📝 建立 .env 檔案..."; \
+		cp .env.example .env; \
+		echo "✅ 已建立 .env 檔案，請編輯並填入正確的參數值"; \
+	fi
+
 # 本地測試
 test: local-test
 
 local-test:
+	@if [ ! -f .env ]; then \
+		echo "❌ 找不到 .env 檔案"; \
+		echo "請執行: make setup-env"; \
+		exit 1; \
+	fi
 	@echo "🧪 執行本地測試..."
-	@echo "注意：請先設置正確的 API 金鑰環境變數"
-	python test_local.py
+	python run_local.py
 
 # 程式碼檢查
 lint:
@@ -37,7 +52,7 @@ lint:
 format:
 	@echo "✨ 格式化程式碼..."
 	black src/ --line-length=100
-	black test_local.py --line-length=100
+	@if [ -f run_local.py ]; then black run_local.py --line-length=100; fi
 
 # 清理暫存檔案
 clean:
@@ -72,14 +87,15 @@ prepare-release:
 setup:
 	@echo "🏁 首次設置..."
 	$(MAKE) install
+	$(MAKE) setup-env
 	@echo ""
 	@echo "📝 下一步："
-	@echo "1. 設置環境變數（API 金鑰）："
-	@echo "   export ISSUER_ID='your-issuer-id'"
-	@echo "   export KEY_ID='your-key-id'"
-	@echo "   export PRIVATE_KEY_BASE64='your-base64-private-key'"
+	@echo "1. 編輯 .env 檔案並填入您的 API 金鑰："
+	@echo "   vi .env  # 或使用您喜歡的編輯器"
 	@echo ""
-	@echo "2. 執行測試："
+	@echo "2. 執行本地測試："
 	@echo "   make test"
 	@echo ""
 	@echo "3. 在 GitHub Repository 中設置 Secrets"
+	@echo ""
+	@echo "詳細說明請參考: LOCAL_TESTING.md"

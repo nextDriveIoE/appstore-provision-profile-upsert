@@ -63,22 +63,22 @@ venv.bak/
 # macOS
 .DS_Store
 
-# API Keys (絕對不要提交)
+# API Keys (Never commit)
 *.p8
 AuthKey_*.p8
 private_keys/
 secrets/
 
-# 測試檔案
+# Test files
 test_*.py
 *_test.py
 tests/
 
-# 日誌檔案
+# Log files
 *.log
 logs/
 
-# 暫存檔案
+# Temporary files
 *.tmp
 *.temp
 .temp/
