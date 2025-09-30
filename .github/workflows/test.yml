@@ -37,6 +37,21 @@ on:
           - 'MAC_APP_DEVELOPMENT'
           - 'MAC_APP_STORE'
         default: 'IOS_APP_DEVELOPMENT'
+      
+      issuer_id:
+        description: 'App Store Connect API Issuer ID'
+        required: true
+        type: string
+      
+      key_id:
+        description: 'App Store Connect API Key ID'
+        required: true
+        type: string
+      
+      private_key_base64:
+        description: 'API Private Key (Base64 encoded)'
+        required: true
+        type: string
 
 jobs:
   test-upsert:
@@ -56,9 +71,9 @@ jobs:
         with:
           profile_name: ${{ github.event.inputs.profile_name }}
           cert_type: ${{ github.event.inputs.cert_type }}
-          issuer_id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-          key_id: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
-          private_key_base64: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY_BASE64 }}
+          issuer_id: ${{ github.event.inputs.issuer_id }}
+          key_id: ${{ github.event.inputs.key_id }}
+          private_key_base64: ${{ github.event.inputs.private_key_base64 }}
           bundle_id: ${{ github.event.inputs.bundle_id }}
           profile_type: ${{ github.event.inputs.profile_type }}
       
