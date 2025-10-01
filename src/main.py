@@ -264,17 +264,32 @@ class ProvisioningProfileManager:
         logger.info(f"刪除 Provisioning Profile (ID: {profile_id})...")
         
         try:
-            self.connection.profile(profile_id).delete()
+            # 直接使用 requests 來繞過 pydantic 驗證問題
+            import requests
+            url = f"https://api.appstoreconnect.apple.com/v1/profiles/{profile_id}"
+            headers = dict(self.connection._s.headers)
+            
+            response = requests.delete(url, headers=headers)
+            response.raise_for_status()
+            
             logger.info(f"成功刪除 Provisioning Profile (ID: {profile_id})")
             return True
             
-        except EndpointException as e:
-            logger.error(f"刪除 Provisioning Profile 時發生錯誤: {e}")
-            for error in e.errors:
-                logger.error(f"- {error.code}: {error.detail}")
+        except requests.RequestException as e:
+            logger.error(f"刪除 Provisioning Profile 時發生 HTTP 錯誤: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                try:
+                    error_data = e.response.json()
+                    if 'errors' in error_data:
+                        for error in error_data['errors']:
+                            logger.error(f"- {error.get('code', 'UNKNOWN')}: {error.get('detail', 'No detail')}")
+                except:
+                    logger.error(f"- Response status: {e.response.status_code}")
             return False
         except Exception as e:
             logger.error(f"刪除 Provisioning Profile 時發生未知錯誤: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     def get_all_devices(self) -> List[str]:
