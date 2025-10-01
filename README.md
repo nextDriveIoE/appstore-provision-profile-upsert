@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Update Provisioning Profile
-        uses: ./appstore-provision-profile-upsert
+        uses: nextDriveIoE/appstore-provision-profile-upsert@main
         with:
           profile_name: ${{ github.event.inputs.profile_name }}
           cert_type: 'IOS_DISTRIBUTION'
