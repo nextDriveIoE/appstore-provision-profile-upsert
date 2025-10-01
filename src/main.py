@@ -44,33 +44,38 @@ class ProvisioningProfileManager:
         logger.info(f"尋找類型為 {cert_type} 的可用證書...")
         
         try:
-            # 列出所有證書
-            certificates = self.connection.certificates().get()
+            # 直接使用 requests 來繞過 pydantic 驗證問題
+            import requests
+            url = "https://api.appstoreconnect.apple.com/v1/certificates"
+            headers = dict(self.connection._s.headers)
+            
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()
+            
+            data = response.json()
             
             valid_certs = []
             current_time = datetime.now(timezone.utc)
             
-            for cert in certificates.data:
+            for cert in data.get('data', []):
                 # 過濾證書類型
-                if cert.attributes.certificate_type != cert_type:
+                if cert['attributes']['certificateType'] != cert_type:
                     continue
                     
                 # 檢查證書是否過期
-                exp_date = cert.attributes.expiration_date
-                
-                # 如果 exp_date 是字串，轉換為 datetime
-                if isinstance(exp_date, str):
-                    exp_date = datetime.fromisoformat(exp_date.replace('Z', '+00:00'))
+                exp_date_str = cert['attributes']['expirationDate']
+                exp_date = datetime.fromisoformat(exp_date_str.replace('Z', '+00:00'))
                 
                 if exp_date > current_time:
-                    valid_certs.append({
-                        'id': cert.id,
-                        'name': cert.attributes.name,
-                        'display_name': cert.attributes.display_name,
-                        'expiration_date': exp_date.isoformat() if isinstance(exp_date, datetime) else exp_date,
-                        'platform': cert.attributes.platform
-                    })
-                    logger.info(f"找到有效證書: {cert.attributes.name} (ID: {cert.id})")
+                    cert_info = {
+                        'id': cert['id'],
+                        'name': cert['attributes']['name'],
+                        'display_name': cert['attributes'].get('displayName', cert['attributes']['name']),
+                        'expiration_date': exp_date.isoformat(),
+                        'platform': cert['attributes'].get('platform', 'IOS')
+                    }
+                    valid_certs.append(cert_info)
+                    logger.info(f"找到有效證書: {cert_info['name']} (ID: {cert_info['id']})")
             
             if not valid_certs:
                 logger.error(f"未找到類型為 {cert_type} 的有效證書")
@@ -83,12 +88,7 @@ class ProvisioningProfileManager:
             logger.info(f"證書過期日期: {selected_cert['expiration_date']}")
             
             # 檢查證書是否即將過期（30天內）
-            exp_date_str = selected_cert['expiration_date']
-            if isinstance(exp_date_str, str):
-                exp_date = datetime.fromisoformat(exp_date_str.replace('Z', '+00:00'))
-            else:
-                exp_date = exp_date_str
-            
+            exp_date = datetime.fromisoformat(selected_cert['expiration_date'].replace('Z', '+00:00'))
             days_until_expiry = (exp_date - current_time).days
             if days_until_expiry < 30:
                 logger.warning(f"⚠️  警告：選擇的證書將在 {days_until_expiry} 天後過期！")
@@ -96,13 +96,13 @@ class ProvisioningProfileManager:
             
             return selected_cert
             
-        except EndpointException as e:
-            logger.error(f"獲取證書時發生錯誤: {e}")
-            for error in e.errors:
-                logger.error(f"- {error.code}: {error.detail}")
+        except requests.RequestException as e:
+            logger.error(f"獲取證書時發生 HTTP 錯誤: {e}")
             return None
         except Exception as e:
             logger.error(f"獲取證書時發生未知錯誤: {e}")
+            import traceback
+            traceback.print_exc()
             return None
     
     def find_all_provisioning_profiles(self, profile_name: str, include_invalid: bool = True) -> List[Dict[str, Any]]:
