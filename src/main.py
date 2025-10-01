@@ -362,9 +362,14 @@ class ProvisioningProfileManager:
             logger.info(f"- Device IDs: {device_ids}")
         
         try:
-            # 建立請求物件
-            relationships_data = {
-                'bundle_id': {
+            # 直接使用 requests 來繞過 pydantic 驗證問題
+            import requests
+            url = "https://api.appstoreconnect.apple.com/v1/profiles"
+            headers = dict(self.connection._s.headers)
+            
+            # 建立請求資料
+            relationships = {
+                'bundleId': {
                     'data': {
                         'type': 'bundleIds',
                         'id': bundle_id
@@ -382,7 +387,7 @@ class ProvisioningProfileManager:
             
             # 如果有裝置 ID，加入到關聯中（通常用於開發用 Profile）
             if device_ids:
-                relationships_data['devices'] = {
+                relationships['devices'] = {
                     'data': [
                         {
                             'type': 'devices',
@@ -391,36 +396,44 @@ class ProvisioningProfileManager:
                     ]
                 }
             
-            # 建立 Profile
-            create_request = ProfileCreateRequest(
-                data=ProfileCreateRequest.Data(
-                    attributes=ProfileCreateRequest.Data.Attributes(
-                        name=profile_name,
-                        profile_type=profile_type
-                    ),
-                    relationships=ProfileCreateRequest.Data.Relationships(
-                        **relationships_data
-                    )
-                )
-            )
+            payload = {
+                'data': {
+                    'type': 'profiles',
+                    'attributes': {
+                        'name': profile_name,
+                        'profileType': profile_type
+                    },
+                    'relationships': relationships
+                }
+            }
             
-            response = self.connection.profiles().create(create_request)
+            response = requests.post(url, headers=headers, json=payload)
+            response.raise_for_status()
             
-            if response.data:
-                new_profile_id = response.data.id
+            data = response.json()
+            if data.get('data'):
+                new_profile_id = data['data']['id']
                 logger.info(f"成功建立 Provisioning Profile (ID: {new_profile_id})")
                 return new_profile_id
             else:
                 logger.error("建立 Provisioning Profile 失敗：回應中沒有資料")
                 return None
                 
-        except EndpointException as e:
-            logger.error(f"建立 Provisioning Profile 時發生錯誤: {e}")
-            for error in e.errors:
-                logger.error(f"- {error.code}: {error.detail}")
+        except requests.RequestException as e:
+            logger.error(f"建立 Provisioning Profile 時發生 HTTP 錯誤: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                try:
+                    error_data = e.response.json()
+                    if 'errors' in error_data:
+                        for error in error_data['errors']:
+                            logger.error(f"- {error.get('code', 'UNKNOWN')}: {error.get('detail', 'No detail')}")
+                except:
+                    logger.error(f"- Response status: {e.response.status_code}")
             return None
         except Exception as e:
             logger.error(f"建立 Provisioning Profile 時發生未知錯誤: {e}")
+            import traceback
+            traceback.print_exc()
             return None
 
 
