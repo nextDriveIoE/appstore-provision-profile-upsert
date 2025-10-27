@@ -350,6 +350,90 @@ class ProvisioningProfileManager:
             logger.error(f"獲取 Bundle ID 時發生未知錯誤: {e}")
             return None
     
+    def download_provisioning_profile(self, profile_id: str, output_path: str, max_retries: int = 3, retry_delay: int = 5) -> bool:
+        """下載 Provisioning Profile 並保存到指定路徑
+        
+        Args:
+            profile_id: Profile ID
+            output_path: 輸出路徑
+            max_retries: 最大重試次數
+            retry_delay: 重試延遲（秒）
+        """
+        logger.info(f"下載 Provisioning Profile (ID: {profile_id}) 到 {output_path}...")
+        
+        try:
+            import requests
+            import time
+            # 使用正確的 API 端點來獲取 profile 內容
+            url = f"https://api.appstoreconnect.apple.com/v1/profiles/{profile_id}"
+            headers = dict(self.connection._s.headers)
+            
+            # 重試機制：確保 profile 已完全建立
+            response = None
+            for attempt in range(max_retries):
+                try:
+                    response = requests.get(url, headers=headers, timeout=10)
+                    response.raise_for_status()
+                    break  # 成功則跳出迴圈
+                except requests.exceptions.HTTPError as e:
+                    if response and response.status_code == 404 and attempt < max_retries - 1:
+                        logger.warning(f"Profile 尚未完全建立，{retry_delay} 秒後重試... (嘗試 {attempt + 1}/{max_retries})")
+                        time.sleep(retry_delay)
+                    else:
+                        raise
+            
+            if response is None:
+                logger.error("無法下載 Provisioning Profile")
+                return False
+            
+            # 從 API 回應中提取 profile 內容
+            data = response.json()
+            if not data.get('data'):
+                logger.error("API 回應中沒有 profile 資料")
+                return False
+            
+            profile_data = data['data']
+            # profileContent 是 Base64 編碼的內容
+            profile_content_b64 = profile_data.get('attributes', {}).get('profileContent')
+            if not profile_content_b64:
+                logger.error("無法從 API 回應中取得 profileContent")
+                return False
+            
+            # 解碼 Base64 內容
+            import base64
+            profile_content = base64.b64decode(profile_content_b64)
+            
+            # 確保輸出目錄存在
+            output_dir = os.path.dirname(output_path)
+            if output_dir and not os.path.exists(output_dir):
+                os.makedirs(output_dir, exist_ok=True)
+                logger.info(f"已建立輸出目錄: {output_dir}")
+            
+            # 保存 provisioning profile
+            with open(output_path, 'wb') as f:
+                f.write(profile_content)
+            
+            logger.info(f"成功下載 Provisioning Profile 到 {output_path}")
+            logger.info(f"檔案大小: {len(profile_content)} bytes")
+            return True
+            
+        except requests.RequestException as e:
+            logger.error(f"下載 Provisioning Profile 時發生 HTTP 錯誤: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                try:
+                    error_data = e.response.json()
+                    if 'errors' in error_data:
+                        for error in error_data['errors']:
+                            logger.error(f"- {error.get('code', 'UNKNOWN')}: {error.get('detail', 'No detail')}")
+                except:
+                    logger.error(f"- Response status: {e.response.status_code}")
+            return False
+        except Exception as e:
+            logger.error(f"下載 Provisioning Profile 時發生未知錯誤: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+    
     def create_provisioning_profile(self, profile_name: str, profile_type: str, 
                                    bundle_id: str, cert_id: str, 
                                    device_ids: List[str] = None) -> Optional[str]:
@@ -451,9 +535,17 @@ def set_github_output(name: str, value: str):
     """設置 GitHub Action 輸出"""
     github_output = os.environ.get('GITHUB_OUTPUT')
     if github_output:
-        with open(github_output, 'a') as f:
-            f.write(f"{name}={value}\n")
-        logger.info(f"設置輸出 {name}={value}")
+        try:
+            # 確保輸出目錄存在
+            output_dir = os.path.dirname(github_output)
+            if output_dir and not os.path.exists(output_dir):
+                os.makedirs(output_dir, exist_ok=True)
+            
+            with open(github_output, 'a') as f:
+                f.write(f"{name}={value}\n")
+            logger.info(f"設置輸出 {name}={value}")
+        except Exception as e:
+            logger.error(f"設置輸出失敗: {e}")
 
 
 def main():
@@ -468,6 +560,7 @@ def main():
     private_key_base64 = os.environ.get('PRIVATE_KEY_BASE64')
     bundle_id_identifier = os.environ.get('BUNDLE_ID')
     profile_type = os.environ.get('PROFILE_TYPE', 'IOS_APP_DEVELOPMENT')
+    out_path = os.environ.get('OUT_PATH')
     
     # 驗證必要參數
     required_params = {
@@ -569,6 +662,32 @@ def main():
         logger.info(f"✅ 成功完成 Provisioning Profile 更新")
         logger.info(f"- Profile ID: {new_profile_id}")
         logger.info(f"- Certificate ID: {cert_id}")
+        
+        # 步驟 5: 如果指定了輸出路徑，下載 Provisioning Profile
+        if out_path:
+            logger.info("\n=== 步驟 5: 下載 Provisioning Profile ===")
+            if manager.download_provisioning_profile(new_profile_id, out_path):
+                logger.info(f"✅ 成功下載 Provisioning Profile 到 {out_path}")
+                set_github_output('profile_path', out_path)
+                
+                # 將檔案轉換成 Base64
+                logger.info("正在將 Provisioning Profile 轉換為 Base64...")
+                try:
+                    with open(out_path, 'rb') as f:
+                        profile_content = f.read()
+                    profile_base64 = base64.b64encode(profile_content).decode('utf-8')
+                    set_github_output('provision_profile_base64', profile_base64)
+                    logger.info(f"✅ 成功轉換為 Base64 (長度: {len(profile_base64)} 字元)")
+                except Exception as e:
+                    logger.error(f"轉換 Base64 失敗: {e}")
+                    set_github_output('success', 'false')
+                    sys.exit(1)
+            else:
+                logger.error("下載 Provisioning Profile 失敗")
+                set_github_output('success', 'false')
+                sys.exit(1)
+        else:
+            logger.info("未指定輸出路徑，跳過下載步驟")
         
         set_github_output('profile_id', new_profile_id)
         set_github_output('success', 'true')

@@ -82,3 +82,4 @@ logs/
 *.tmp
 *.temp
 .temp/
+/tmp

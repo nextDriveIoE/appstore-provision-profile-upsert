@@ -59,7 +59,22 @@ def load_env_file(env_path: str = '.env'):
 
 def setup_github_output():
     """設置 GITHUB_OUTPUT 環境變數（如果未設置）"""
-    if not os.environ.get('GITHUB_OUTPUT'):
+    output_path = os.environ.get('GITHUB_OUTPUT')
+    
+    if output_path:
+        # 確保輸出目錄存在
+        output_dir = os.path.dirname(output_path)
+        if output_dir and not os.path.exists(output_dir):
+            os.makedirs(output_dir, exist_ok=True)
+            print(f"📁 建立輸出目錄: {output_dir}")
+        
+        # 如果檔案不存在，建立它
+        if not os.path.exists(output_path):
+            Path(output_path).touch()
+            print(f"📝 建立 GitHub Output 檔案: {output_path}")
+        print()
+        return output_path
+    else:
         # 建立臨時檔案來模擬 GitHub Action 的輸出
         temp_output = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='_github_output.txt')
         output_path = temp_output.name
@@ -69,7 +84,6 @@ def setup_github_output():
         print(f"📝 建立 GitHub Output 模擬檔案: {output_path}")
         print()
         return output_path
-    return os.environ['GITHUB_OUTPUT']
 
 def display_github_output(output_path: str):
     """顯示 GitHub Action 的輸出結果"""
@@ -84,17 +98,25 @@ def display_github_output(output_path: str):
                 for line in content.split('\n'):
                     if '=' in line:
                         key, value = line.split('=', 1)
-                        print(f"  {key} = {value}")
+                        
+                        # 對於長的輸出值進行特殊處理
+                        if key == 'provision_profile_base64':
+                            print(f"  {key} = {value[:50]}... (長度: {len(value)} 字元)")
+                        elif len(value) > 100:
+                            print(f"  {key} = {value[:100]}... (長度: {len(value)} 字元)")
+                        else:
+                            print(f"  {key} = {value}")
             else:
                 print("  (無輸出)")
         
         print("="*60)
         
-        # 清理臨時檔案
-        try:
-            os.unlink(output_path)
-        except:
-            pass
+        # 只清理臨時檔案（/tmp 開頭的路徑保留）
+        if '/tmp' not in output_path and not output_path.startswith('./tmp'):
+            try:
+                os.unlink(output_path)
+            except:
+                pass
 
 def main():
     """主函數"""
@@ -120,12 +142,26 @@ def main():
         'PROFILE_TYPE'
     ]
     
+    # 可選參數
+    optional_params = [
+        'OUT_PATH'
+    ]
+    
     missing_params = [param for param in required_params if not os.environ.get(param)]
     
     if missing_params:
         print(f"❌ 缺少必要參數: {', '.join(missing_params)}")
         print(f"\n請在 {env_file} 檔案中設置這些參數\n")
         sys.exit(1)
+    
+    # 顯示可選參數狀態
+    print("\n📋 可選參數:")
+    for param in optional_params:
+        value = os.environ.get(param)
+        if value:
+            print(f"  ✓ {param} = {value}")
+        else:
+            print(f"  ○ {param} (未設置)")
     
     print("✅ 所有必要參數已設置")
     print("\n" + "="*60)

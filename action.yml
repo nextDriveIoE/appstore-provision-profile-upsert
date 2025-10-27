@@ -31,6 +31,10 @@ inputs:
     description: 'Provisioning Profile 類型 (例: IOS_APP_DEVELOPMENT, IOS_APP_STORE, etc.)'
     required: true
     default: 'IOS_APP_DEVELOPMENT'
+  
+  out_path:
+    description: '輸出 Provisioning Profile 的檔案路徑 (可選)'
+    required: false
 
 outputs:
   profile_id:
@@ -38,6 +42,12 @@ outputs:
   
   cert_id:
     description: '使用的證書 ID'
+  
+  profile_path:
+    description: '下載的 Provisioning Profile 檔案路徑 (如果指定了 out_path)'
+  
+  provision_profile_base64:
+    description: 'Provisioning Profile 的 Base64 編碼內容 (如果指定了 out_path)'
   
   success:
     description: '操作是否成功'
@@ -67,6 +77,7 @@ runs:
         PRIVATE_KEY_BASE64: ${{ inputs.private_key_base64 }}
         BUNDLE_ID: ${{ inputs.bundle_id }}
         PROFILE_TYPE: ${{ inputs.profile_type }}
+        OUT_PATH: ${{ inputs.out_path }}
         GITHUB_OUTPUT: ${{ env.GITHUB_OUTPUT }}
 
 branding:
