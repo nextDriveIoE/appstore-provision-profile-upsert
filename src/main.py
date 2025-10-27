@@ -675,7 +675,8 @@ def main():
                 try:
                     with open(out_path, 'rb') as f:
                         profile_content = f.read()
-                    profile_base64 = base64.b64encode(profile_content).decode('utf-8')
+                    # 移除所有空白字符（換行符、空格等），確保 GitHub Actions 能正確處理
+                    profile_base64 = base64.b64encode(profile_content).decode('utf-8').replace('\n', '').replace(' ', '')
                     set_github_output('provision_profile_base64', profile_base64)
                     logger.info(f"✅ 成功轉換為 Base64 (長度: {len(profile_base64)} 字元)")
                 except Exception as e:
