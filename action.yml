@@ -39,18 +39,23 @@ inputs:
 outputs:
   profile_id:
     description: '建立或更新的 Provisioning Profile ID'
+    value: ${{ steps.run-upsert.outputs.profile_id }}
   
   cert_id:
     description: '使用的證書 ID'
+    value: ${{ steps.run-upsert.outputs.cert_id }}
   
   profile_path:
     description: '下載的 Provisioning Profile 檔案路徑 (如果指定了 out_path)'
+    value: ${{ steps.run-upsert.outputs.profile_path }}
   
   provision_profile_base64:
-    description: 'Provisioning Profile 的 Base64 編碼內容 (如果指定了 out_path)'
+    description: 'Provisioning Profile 的 Base64 編碼內容'
+    value: ${{ steps.run-upsert.outputs.provision_profile_base64 }}
   
   success:
     description: '操作是否成功'
+    value: ${{ steps.run-upsert.outputs.success }}
 
 runs:
   using: 'composite'
@@ -66,6 +71,7 @@ runs:
         pip install applaud cryptography
     
     - name: Run Provision Profile Upsert
+      id: run-upsert
       shell: bash
       run: |
         python ${{ github.action_path }}/src/main.py
