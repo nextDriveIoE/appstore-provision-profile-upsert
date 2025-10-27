@@ -78,7 +78,6 @@ runs:
         BUNDLE_ID: ${{ inputs.bundle_id }}
         PROFILE_TYPE: ${{ inputs.profile_type }}
         OUT_PATH: ${{ inputs.out_path }}
-        GITHUB_OUTPUT: ${{ env.GITHUB_OUTPUT }}
 
 branding:
   icon: 'smartphone'
