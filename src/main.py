@@ -532,20 +532,57 @@ def decode_private_key(private_key_base64: str) -> str:
 
 
 def set_github_output(name: str, value: str):
-    """設置 GitHub Action 輸出"""
+    """設置 GitHub Action 輸出
+    
+    使用 GitHub Actions 的多行輸出格式：
+    name=value
+    或者對於包含換行符的值：
+    name<<EOF
+    value
+    EOF
+    """
     github_output = os.environ.get('GITHUB_OUTPUT')
-    if github_output:
-        try:
-            # 確保輸出目錄存在
-            output_dir = os.path.dirname(github_output)
-            if output_dir and not os.path.exists(output_dir):
-                os.makedirs(output_dir, exist_ok=True)
-            
-            with open(github_output, 'a') as f:
+    if not github_output:
+        logger.warning(f"⚠️  GITHUB_OUTPUT 環境變數未設置，無法設置輸出 {name}")
+        return
+    
+    try:
+        # 確保輸出目錄存在
+        output_dir = os.path.dirname(github_output)
+        if output_dir and not os.path.exists(output_dir):
+            os.makedirs(output_dir, exist_ok=True)
+            logger.info(f"✅ 建立輸出目錄: {output_dir}")
+        
+        # 使用 GitHub Actions 的多行輸出格式
+        # 這樣可以支持包含特殊字符和換行符的值
+        delimiter = f"EOF_{name}_{int(os.urandom(4).hex(), 16)}"
+        
+        with open(github_output, 'a') as f:
+            # 如果值包含換行符或特殊字符，使用多行格式
+            if '\n' in value or '\r' in value:
+                f.write(f"{name}<<{delimiter}\n{value}\n{delimiter}\n")
+                logger.info(f"✅ 設置輸出 {name} (多行格式，長度: {len(value)} 字元)")
+            else:
                 f.write(f"{name}={value}\n")
-            logger.info(f"設置輸出 {name}={value}")
-        except Exception as e:
-            logger.error(f"設置輸出失敗: {e}")
+                # 對於長值，只顯示前 100 字元
+                display_value = value[:100] + "..." if len(value) > 100 else value
+                logger.info(f"✅ 設置輸出 {name}={display_value}")
+        
+        # 驗證輸出是否被正確寫入
+        with open(github_output, 'r') as f:
+            content = f.read()
+            if name in content:
+                logger.info(f"✅ 輸出驗證成功: {name} 已寫入 {github_output}")
+            else:
+                logger.error(f"❌ 輸出驗證失敗: {name} 未找到在 {github_output}")
+                raise ValueError(f"輸出 {name} 寫入失敗")
+                
+    except Exception as e:
+        error_msg = f"❌ 設置輸出失敗: {e}"
+        logger.error(error_msg)
+        import traceback
+        traceback.print_exc()
+        raise
 
 
 def main():
