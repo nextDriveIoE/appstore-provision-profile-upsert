@@ -540,11 +540,13 @@ def set_github_output(name: str, value: str):
     name<<EOF
     value
     EOF
+    
+    注意：此函數不會拋出異常，只會記錄錯誤，確保程式繼續執行
     """
     github_output = os.environ.get('GITHUB_OUTPUT')
     if not github_output:
         logger.warning(f"⚠️  GITHUB_OUTPUT 環境變數未設置，無法設置輸出 {name}")
-        return
+        return False
     
     try:
         # 確保輸出目錄存在
@@ -573,16 +575,17 @@ def set_github_output(name: str, value: str):
             content = f.read()
             if name in content:
                 logger.info(f"✅ 輸出驗證成功: {name} 已寫入 {github_output}")
+                return True
             else:
                 logger.error(f"❌ 輸出驗證失敗: {name} 未找到在 {github_output}")
-                raise ValueError(f"輸出 {name} 寫入失敗")
+                return False
                 
     except Exception as e:
         error_msg = f"❌ 設置輸出失敗: {e}"
         logger.error(error_msg)
         import traceback
         traceback.print_exc()
-        raise
+        return False
 
 
 def main():
