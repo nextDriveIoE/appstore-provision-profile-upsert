@@ -668,38 +668,80 @@ def main():
         
         # 決定臨時下載路徑
         download_path = out_path if out_path else tempfile.NamedTemporaryFile(delete=False, suffix='.mobileprovision').name
+        logger.info(f"下載路徑: {download_path}")
         
         if manager.download_provisioning_profile(new_profile_id, download_path):
             logger.info(f"✅ 成功下載 Provisioning Profile 到 {download_path}")
             
+            # 驗證檔案是否存在且有內容
+            if not os.path.exists(download_path):
+                error_msg = f"❌ 檔案寫入失敗：檔案不存在 {download_path}"
+                logger.error(error_msg)
+                set_github_output('success', 'false')
+                raise FileNotFoundError(error_msg)
+            
+            file_size = os.path.getsize(download_path)
+            if file_size == 0:
+                error_msg = f"❌ 檔案寫入失敗：檔案大小為 0 bytes {download_path}"
+                logger.error(error_msg)
+                set_github_output('success', 'false')
+                raise ValueError(error_msg)
+            
+            logger.info(f"✅ 檔案驗證成功，大小: {file_size} bytes")
+            
             # 如果指定了 out_path，設置 profile_path 輸出
             if out_path:
                 set_github_output('profile_path', out_path)
+                logger.info(f"✅ 設置 profile_path 輸出: {out_path}")
             
             # 將檔案轉換成 Base64
             logger.info("正在將 Provisioning Profile 轉換為 Base64...")
             try:
                 with open(download_path, 'rb') as f:
                     profile_content = f.read()
+                
+                if not profile_content:
+                    error_msg = "❌ Base64 轉換失敗：檔案內容為空"
+                    logger.error(error_msg)
+                    set_github_output('success', 'false')
+                    raise ValueError(error_msg)
+                
+                logger.info(f"✅ 檔案讀取成功，大小: {len(profile_content)} bytes")
+                
                 # 移除所有空白字符（換行符、空格等），確保 GitHub Actions 能正確處理
                 profile_base64 = base64.b64encode(profile_content).decode('utf-8').replace('\n', '').replace(' ', '')
+                
+                if not profile_base64:
+                    error_msg = "❌ Base64 轉換失敗：Base64 字符串為空"
+                    logger.error(error_msg)
+                    set_github_output('success', 'false')
+                    raise ValueError(error_msg)
+                
+                logger.info(f"✅ Base64 編碼成功，長度: {len(profile_base64)} 字元")
+                
                 set_github_output('provision_profile_base64', profile_base64)
+                logger.info(f"✅ 成功設置 provision_profile_base64 輸出")
                 logger.info(f"✅ 成功轉換為 Base64 (長度: {len(profile_base64)} 字元)")
             except Exception as e:
-                logger.error(f"轉換 Base64 失敗: {e}")
+                error_msg = f"❌ 轉換 Base64 失敗: {e}"
+                logger.error(error_msg)
+                import traceback
+                traceback.print_exc()
                 set_github_output('success', 'false')
-                sys.exit(1)
+                raise
             
             # 清理臨時檔案（如果沒有指定 out_path）
             if not out_path:
                 try:
                     os.unlink(download_path)
-                except:
-                    pass
+                    logger.info(f"✅ 已清理臨時檔案: {download_path}")
+                except Exception as e:
+                    logger.warning(f"⚠️  清理臨時檔案失敗: {e}")
         else:
-            logger.error("下載 Provisioning Profile 失敗")
+            error_msg = "❌ 下載 Provisioning Profile 失敗"
+            logger.error(error_msg)
             set_github_output('success', 'false')
-            sys.exit(1)
+            raise RuntimeError(error_msg)
         
         set_github_output('profile_id', new_profile_id)
         set_github_output('success', 'true')
