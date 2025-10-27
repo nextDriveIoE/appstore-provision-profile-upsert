@@ -108,7 +108,7 @@ jobs:
 | `profile_id` | ID of the created/updated provisioning profile | `7TH5ULYJQG` |
 | `cert_id` | ID of the certificate used | `AA59HGVWC5` |
 | `profile_path` | Path to the downloaded provisioning profile (if `out_path` is specified) | `./provisioning_profiles/MyProfile.mobileprovision` |
-| `provision_profile_base64` | Base64-encoded content of the provisioning profile (if `out_path` is specified) | `MII21AYJKoZIhvcNAQcCoII2xTCCNsE...` |
+| `provision_profile_base64` | Base64-encoded content of the provisioning profile | `MII21AYJKoZIhvcNAQcCoII2xTCCNsE...` |
 | `success` | Whether the operation was successful | `true` or `false` |
 
 ## Setup
