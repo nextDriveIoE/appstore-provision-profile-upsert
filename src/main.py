@@ -325,7 +325,7 @@ class ProvisioningProfileManager:
             return False
     
     def get_all_devices(self) -> List[str]:
-        """獲取所有可用設備的 ID 列表"""
+        """獲取所有可用設備的 ID 列表（支援分頁）"""
         logger.info("獲取所有可用設備...")
         
         try:
@@ -333,13 +333,39 @@ class ProvisioningProfileManager:
             url = "https://api.appstoreconnect.apple.com/v1/devices"
             headers = dict(self.connection._s.headers)
             
-            response = requests.get(url, headers=headers)
-            response.raise_for_status()
+            device_ids = []
+            next_url = url
+            page_count = 0
             
-            data = response.json()
-            device_ids = [device['id'] for device in data.get('data', [])]
+            # 處理分頁，確保取得所有設備
+            while next_url:
+                page_count += 1
+                logger.info(f"正在獲取設備列表（第 {page_count} 頁）...")
+                
+                response = requests.get(next_url, headers=headers, params={"limit": 200})
+                response.raise_for_status()
+                
+                data = response.json()
+                page_devices = [device['id'] for device in data.get('data', [])]
+                device_ids.extend(page_devices)
+                
+                logger.info(f"  - 本頁找到 {len(page_devices)} 個設備")
+                
+                # 檢查是否有下一頁
+                next_url = data.get('links', {}).get('next')
+                
+                # 安全限制：最多處理 50 頁（避免無限迴圈）
+                if page_count >= 50:
+                    logger.warning("⚠️  已達到最大分頁限制（50 頁），停止獲取")
+                    break
             
-            logger.info(f"找到 {len(device_ids)} 個設備")
+            logger.info(f"✅ 總共找到 {len(device_ids)} 個設備")
+            
+            # 顯示前幾個設備 ID 作為確認
+            if device_ids:
+                sample_count = min(5, len(device_ids))
+                logger.info(f"設備 ID 範例（前 {sample_count} 個）: {device_ids[:sample_count]}")
+            
             return device_ids
                 
         except requests.RequestException as e:
@@ -347,6 +373,8 @@ class ProvisioningProfileManager:
             return []
         except Exception as e:
             logger.error(f"獲取設備列表時發生未知錯誤: {e}")
+            import traceback
+            traceback.print_exc()
             return []
     
     def find_bundle_id_by_identifier(self, bundle_identifier: str) -> Optional[str]:
