@@ -658,8 +658,6 @@ def main():
         device_ids = []
         if existing_profiles:
             logger.info(f"找到 {len(existing_profiles)} 個現有 Profile，準備全部刪除...")
-            # 保存第一個 Profile 的裝置資訊（如果有的話）
-            device_ids = existing_profiles[0].get('devices', [])
             
             # 刪除所有同名 Profile
             for profile in existing_profiles:
@@ -672,7 +670,8 @@ def main():
             logger.info("未找到現有 Profile，將建立新的")
         
         # 對於 Ad Hoc 或 Development profile，需要設備列表
-        if profile_type in ['IOS_APP_ADHOC', 'IOS_APP_DEVELOPMENT', 'MAC_APP_DEVELOPMENT'] and not device_ids:
+        # 在 renew 時，總是獲取所有可用設備，確保包含所有裝置
+        if profile_type in ['IOS_APP_ADHOC', 'IOS_APP_DEVELOPMENT', 'MAC_APP_DEVELOPMENT']:
             logger.info("此 Profile 類型需要設備列表，正在獲取所有可用設備...")
             device_ids = manager.get_all_devices()
             if not device_ids:
