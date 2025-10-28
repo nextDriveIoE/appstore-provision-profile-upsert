@@ -124,15 +124,15 @@ class ProvisioningProfileManager:
             profiles = []
             
             # Try multiple methods to find profiles
-            # Method 1: Search using name filter
-            params = {"filter[name]": profile_name, "limit": 200}
+            # Method 1: Search using name filter (include bundleId relationship)
+            params = {"filter[name]": profile_name, "include": "bundleId,certificates,devices", "limit": 200}
             response = requests.get(url, headers=headers, params=params)
             response.raise_for_status()
             data = response.json()
             
             # Method 2: If not found, try searching INVALID state profiles
             if not data.get('data') and include_invalid:
-                params = {"filter[name]": profile_name, "filter[profileState]": "INVALID", "limit": 200}
+                params = {"filter[name]": profile_name, "filter[profileState]": "INVALID", "include": "bundleId,certificates,devices", "limit": 200}
                 response = requests.get(url, headers=headers, params=params)
                 response.raise_for_status()
                 data = response.json()
@@ -153,6 +153,22 @@ class ProvisioningProfileManager:
                         'certificates': [],
                         'devices': []
                     }
+                    
+                    # 解析關聯資源
+                    if data.get('included'):
+                        for included_item in data['included']:
+                            if included_item['type'] == 'bundleIds':
+                                # 檢查這個 bundleId 是否屬於當前 profile
+                                profile_relationships = profile.get('relationships', {})
+                                bundle_id_rel = profile_relationships.get('bundleId', {}).get('data', {})
+                                if bundle_id_rel.get('id') == included_item['id']:
+                                    profile_info['bundle_id'] = included_item['id']
+                                    logger.info(f"  - Bundle ID: {included_item['id']}")
+                            elif included_item['type'] == 'certificates':
+                                profile_info['certificates'].append(included_item['id'])
+                            elif included_item['type'] == 'devices':
+                                profile_info['devices'].append(included_item['id'])
+                    
                     profiles.append(profile_info)
             
             # Method 3: If still not found, iterate through all profiles
@@ -161,7 +177,7 @@ class ProvisioningProfileManager:
                 page_count = 0
                 while next_url and page_count < 10:
                     page_count += 1
-                    response = requests.get(next_url, headers=headers, params={"limit": 200})
+                    response = requests.get(next_url, headers=headers, params={"limit": 200, "include": "bundleId,certificates,devices"})
                     response.raise_for_status()
                     data = response.json()
                     
@@ -184,6 +200,22 @@ class ProvisioningProfileManager:
                                     'certificates': [],
                                     'devices': []
                                 }
+                                
+                                # 解析關聯資源
+                                if data.get('included'):
+                                    for included_item in data['included']:
+                                        if included_item['type'] == 'bundleIds':
+                                            # 檢查這個 bundleId 是否屬於當前 profile
+                                            profile_relationships = profile.get('relationships', {})
+                                            bundle_id_rel = profile_relationships.get('bundleId', {}).get('data', {})
+                                            if bundle_id_rel.get('id') == included_item['id']:
+                                                profile_info['bundle_id'] = included_item['id']
+                                                logger.info(f"  - Bundle ID: {included_item['id']}")
+                                        elif included_item['type'] == 'certificates':
+                                            profile_info['certificates'].append(included_item['id'])
+                                        elif included_item['type'] == 'devices':
+                                            profile_info['devices'].append(included_item['id'])
+                                
                                 profiles.append(profile_info)
                     
                     next_url = data.get('links', {}).get('next')
@@ -643,21 +675,44 @@ def main():
         cert_id = certificate['id']
         set_github_output('cert_id', cert_id)
         
-        # 步驟 2: 尋找 Bundle ID
-        logger.info("\n=== 步驟 2: 尋找 Bundle ID ===")
-        bundle_id = manager.find_bundle_id_by_identifier(bundle_id_identifier)
-        if not bundle_id:
-            logger.error("未找到對應的 Bundle ID，任務結束")
-            set_github_output('success', 'false')
-            sys.exit(1)
-        
-        # 步驟 3: 檢查現有 Provisioning Profile（可能有多個重複）
-        logger.info("\n=== 步驟 3: 檢查現有 Provisioning Profile ===")
+        # 步驟 2: 檢查現有 Provisioning Profile（可能有多個重複）
+        logger.info("\n=== 步驟 2: 檢查現有 Provisioning Profile ===")
         existing_profiles = manager.find_all_provisioning_profiles(profile_name)
         
+        # 步驟 3: 決定要使用的 Bundle ID
+        logger.info("\n=== 步驟 3: 決定 Bundle ID ===")
+        bundle_id = None
+        
+        # 如果有現有 profile，優先沿用舊的 Bundle ID
+        if existing_profiles:
+            logger.info(f"找到 {len(existing_profiles)} 個現有 Profile")
+            # 嘗試從第一個 profile 取得 Bundle ID
+            old_bundle_id = existing_profiles[0].get('bundle_id')
+            if old_bundle_id:
+                bundle_id = old_bundle_id
+                logger.info(f"✅ 沿用現有 Profile 的 Bundle ID: {bundle_id}")
+            else:
+                logger.warning("⚠️  無法從現有 Profile 取得 Bundle ID，將使用環境變數指定的 Bundle ID")
+        
+        # 如果沒有現有 profile 或無法取得 Bundle ID，使用環境變數
+        if not bundle_id:
+            if not bundle_id_identifier:
+                logger.error("未找到現有 Profile 且未提供 BUNDLE_ID 環境變數，任務結束")
+                set_github_output('success', 'false')
+                sys.exit(1)
+            
+            logger.info(f"根據 Bundle Identifier 尋找 Bundle ID: {bundle_id_identifier}")
+            bundle_id = manager.find_bundle_id_by_identifier(bundle_id_identifier)
+            if not bundle_id:
+                logger.error("未找到對應的 Bundle ID，任務結束")
+                set_github_output('success', 'false')
+                sys.exit(1)
+        
+        # 步驟 4: 刪除現有 Provisioning Profile
         device_ids = []
         if existing_profiles:
-            logger.info(f"找到 {len(existing_profiles)} 個現有 Profile，準備全部刪除...")
+            logger.info(f"\n=== 步驟 4: 刪除現有 Provisioning Profile ===")
+            logger.info(f"準備刪除 {len(existing_profiles)} 個現有 Profile...")
             
             # 刪除所有同名 Profile
             for profile in existing_profiles:
@@ -667,18 +722,21 @@ def main():
                     set_github_output('success', 'false')
                     sys.exit(1)
         else:
-            logger.info("未找到現有 Profile，將建立新的")
+            logger.info("\n=== 步驟 4: 未找到現有 Profile ===")
+            logger.info("將建立新的 Provisioning Profile")
         
+        # 步驟 5: 獲取設備列表（如果需要）
         # 對於 Ad Hoc 或 Development profile，需要設備列表
         # 在 renew 時，總是獲取所有可用設備，確保包含所有裝置
         if profile_type in ['IOS_APP_ADHOC', 'IOS_APP_DEVELOPMENT', 'MAC_APP_DEVELOPMENT']:
+            logger.info("\n=== 步驟 5: 獲取設備列表 ===")
             logger.info("此 Profile 類型需要設備列表，正在獲取所有可用設備...")
             device_ids = manager.get_all_devices()
             if not device_ids:
                 logger.warning("未找到任何設備，但仍嘗試建立 Profile")
         
-        # 步驟 4: 建立新的 Provisioning Profile
-        logger.info("\n=== 步驟 4: 建立新的 Provisioning Profile ===")
+        # 步驟 6: 建立新的 Provisioning Profile
+        logger.info("\n=== 步驟 6: 建立新的 Provisioning Profile ===")
         new_profile_id = manager.create_provisioning_profile(
             profile_name=profile_name,
             profile_type=profile_type,
@@ -702,8 +760,8 @@ def main():
         logger.info(f"- Profile ID: {new_profile_id}")
         logger.info(f"- Certificate ID: {cert_id}")
         
-        # 步驟 5: 下載 Provisioning Profile 並生成 Base64
-        logger.info("\n=== 步驟 5: 下載 Provisioning Profile ===")
+        # 步驟 7: 下載 Provisioning Profile 並生成 Base64
+        logger.info("\n=== 步驟 7: 下載 Provisioning Profile ===")
         
         # 決定臨時下載路徑
         download_path = out_path if out_path else tempfile.NamedTemporaryFile(delete=False, suffix='.mobileprovision').name
