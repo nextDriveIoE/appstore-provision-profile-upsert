@@ -302,11 +302,14 @@ class ProvisioningProfileManager:
             headers = dict(self.connection._s.headers)
             
             response = requests.delete(url, headers=headers)
+            if response.status_code == 404:
+                logger.warning(f"Profile {profile_id} 已不存在（404），視為刪除成功，繼續建立新 Profile")
+                return True
             response.raise_for_status()
-            
+
             logger.info(f"成功刪除 Provisioning Profile (ID: {profile_id})")
             return True
-            
+
         except requests.RequestException as e:
             logger.error(f"刪除 Provisioning Profile 時發生 HTTP 錯誤: {e}")
             if hasattr(e, 'response') and e.response is not None:
