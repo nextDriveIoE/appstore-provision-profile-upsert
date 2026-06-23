@@ -12,6 +12,8 @@ from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 import logging
 
+from profile_logic import filter_profiles_by_exact_name, evaluate_profile_verification
+
 # 設置日誌
 logging.basicConfig(
     level=logging.INFO,
@@ -129,16 +131,19 @@ class ProvisioningProfileManager:
             response = requests.get(url, headers=headers, params=params)
             response.raise_for_status()
             data = response.json()
+            # Apple filter[name] 為前綴/包含比對，需精確過濾，否則會撈到（並在後續刪除）前綴相同的其他 profile
+            matched = filter_profiles_by_exact_name(data.get('data') or [], profile_name)
             
             # Method 2: If not found, try searching INVALID state profiles
-            if not data.get('data') and include_invalid:
+            if not matched and include_invalid:
                 params = {"filter[name]": profile_name, "filter[profileState]": "INVALID", "include": "bundleId,certificates,devices", "limit": 200}
                 response = requests.get(url, headers=headers, params=params)
                 response.raise_for_status()
                 data = response.json()
-            
-            if data.get('data'):
-                for profile in data['data']:
+                matched = filter_profiles_by_exact_name(data.get('data') or [], profile_name)
+
+            if matched:
+                for profile in matched:
                     profile_state = profile['attributes'].get('profileState', 'UNKNOWN')
                     profile_id = profile['id']
                     logger.info(f"Found profile: {profile['attributes']['name']} (ID: {profile_id}, State: {profile_state})")
@@ -589,6 +594,44 @@ class ProvisioningProfileManager:
             traceback.print_exc()
             return None
 
+    def verify_provisioning_profile(self, profile_id: str, expected_bundle_id: str,
+                                    expected_cert_id: str, max_retries: int = 3,
+                                    retry_delay: int = 3) -> tuple:
+        """建立後重查 Apple，確認 profile 為 ACTIVE 且綁定正確 bundle/cert。
+
+        回傳 (ok, reason)。bundle/cert 不符無法靠重試修復，但可容忍剛建立時
+        Apple 端短暫不一致（404 / 尚未 ACTIVE），故保留少量重試。
+        """
+        import requests
+        import time
+
+        logger.info(f"重查 Apple 驗證 Profile (ID: {profile_id})...")
+        url = f"https://api.appstoreconnect.apple.com/v1/profiles/{profile_id}"
+        headers = dict(self.connection._s.headers)
+        params = {"include": "bundleId,certificates"}
+        last_reason = "未取得 profile 詳情"
+
+        for attempt in range(max_retries):
+            try:
+                response = requests.get(url, headers=headers, params=params, timeout=15)
+                response.raise_for_status()
+                detail = response.json()
+                ok, reason = evaluate_profile_verification(
+                    detail, expected_bundle_id, expected_cert_id
+                )
+                if ok:
+                    return True, ""
+                last_reason = reason
+                logger.warning(f"驗證未通過（嘗試 {attempt + 1}/{max_retries}）：{reason}")
+            except requests.RequestException as e:
+                last_reason = f"查詢 profile 詳情失敗：{e}"
+                logger.warning(f"驗證查詢失敗（嘗試 {attempt + 1}/{max_retries}）：{e}")
+
+            if attempt < max_retries - 1:
+                time.sleep(retry_delay)
+
+        return False, last_reason
+
 
 def decode_private_key(private_key_base64: str) -> str:
     """解碼 Base64 編碼的私鑰"""
@@ -775,6 +818,17 @@ def main():
         logger.info(f"✅ 成功完成 Provisioning Profile 更新")
         logger.info(f"- Profile ID: {new_profile_id}")
         logger.info(f"- Certificate ID: {cert_id}")
+
+        # 步驟 6.5: 自我驗證——重查 Apple 確認 profile 為 ACTIVE 且 bundle/cert 正確
+        logger.info("\n=== 步驟 6.5: 驗證 Provisioning Profile ===")
+        verified, verify_reason = manager.verify_provisioning_profile(
+            new_profile_id, bundle_id, cert_id
+        )
+        if not verified:
+            logger.error(f"❌ Profile 驗證失敗：{verify_reason}")
+            set_github_output('success', 'false')
+            sys.exit(1)
+        logger.info("✅ Profile 驗證通過（ACTIVE，bundle/cert 正確）")
         
         # 步驟 7: 下載 Provisioning Profile 並生成 Base64
         logger.info("\n=== 步驟 7: 下載 Provisioning Profile ===")
