@@ -396,9 +396,13 @@ class ProvisioningProfileManager:
             data = response.json()
             
             if data.get('data'):
-                bundle_id = data['data'][0]['id']
-                logger.info(f"找到 Bundle ID: {bundle_id}")
-                return bundle_id
+                for item in data['data']:
+                    if item['attributes']['identifier'] == bundle_identifier:
+                        bundle_id = item['id']
+                        logger.info(f"找到 Bundle ID: {bundle_id}")
+                        return bundle_id
+                logger.error(f"未找到精確匹配的 Bundle ID: {bundle_identifier}（API 回傳 {len(data['data'])} 筆，但無精確匹配）")
+                return None
             else:
                 logger.error(f"未找到 Bundle ID: {bundle_identifier}")
                 return None
