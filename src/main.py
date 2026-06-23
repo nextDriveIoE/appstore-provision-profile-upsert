@@ -388,27 +388,29 @@ class ProvisioningProfileManager:
             # 直接使用 requests 來繞過 pydantic 驗證問題
             import requests
             url = "https://api.appstoreconnect.apple.com/v1/bundleIds"
-            params = {"filter[identifier]": bundle_identifier}
-            
+            # 加 limit=200 避免分頁截斷；prefix-filter 可能回傳很多條目
+            params = {"filter[identifier]": bundle_identifier, "limit": 200}
+
             # 使用 connection 的 session headers
             headers = dict(self.connection._s.headers)
-            
-            response = requests.get(url, headers=headers, params=params)
-            response.raise_for_status()
-            
-            data = response.json()
-            
-            if data.get('data'):
-                for item in data['data']:
+
+            # 處理分頁，直到找到精確匹配或遍歷完所有結果
+            while url:
+                response = requests.get(url, headers=headers, params=params, timeout=30)
+                response.raise_for_status()
+                data = response.json()
+                params = {}  # 後續分頁由 next URL 攜帶參數
+
+                for item in data.get('data', []):
                     if item['attributes']['identifier'] == bundle_identifier:
                         bundle_id = item['id']
                         logger.info(f"找到 Bundle ID: {bundle_id}")
                         return bundle_id
-                logger.error(f"未找到精確匹配的 Bundle ID: {bundle_identifier}（API 回傳 {len(data['data'])} 筆，但無精確匹配）")
-                return None
-            else:
-                logger.error(f"未找到 Bundle ID: {bundle_identifier}")
-                return None
+
+                url = data.get('links', {}).get('next')
+
+            logger.error(f"未找到精確匹配的 Bundle ID: {bundle_identifier}")
+            return None
                 
         except requests.RequestException as e:
             logger.error(f"獲取 Bundle ID 時發生 HTTP 錯誤: {e}")
