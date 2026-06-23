@@ -712,45 +712,26 @@ def main():
         cert_id = certificate['id']
         set_github_output('cert_id', cert_id)
         
-        # 步驟 2: 檢查現有 Provisioning Profile（可能有多個重複）
-        logger.info("\n=== 步驟 2: 檢查現有 Provisioning Profile ===")
-        existing_profiles = manager.find_all_provisioning_profiles(profile_name)
-        
-        # 步驟 3: 決定要使用的 Bundle ID
-        logger.info("\n=== 步驟 3: 決定 Bundle ID ===")
-        bundle_id = None
-
-        # 有提供 BUNDLE_ID 環境變數時，永遠以 Apple API 查詢結果為準，避免沿用舊 profile 的錯誤 bundle
-        if bundle_id_identifier:
-            logger.info(f"根據 Bundle Identifier 尋找 Bundle ID: {bundle_id_identifier}")
-            bundle_id = manager.find_bundle_id_by_identifier(bundle_id_identifier)
-            if not bundle_id:
-                logger.error("未找到對應的 Bundle ID，任務結束")
-                set_github_output('success', 'false')
-                sys.exit(1)
-        elif existing_profiles:
-            # 無 BUNDLE_ID 環境變數時，才從現有 profile 取得 Bundle ID（fallback）
-            logger.info(f"找到 {len(existing_profiles)} 個現有 Profile")
-            old_bundle_id = existing_profiles[0].get('bundle_id')
-            if old_bundle_id:
-                bundle_id = old_bundle_id
-                logger.info(f"✅ 沿用現有 Profile 的 Bundle ID: {bundle_id}")
-            else:
-                logger.error("無法取得 Bundle ID（未提供 BUNDLE_ID 且無法從現有 Profile 取得），任務結束")
-                set_github_output('success', 'false')
-                sys.exit(1)
-        else:
-            logger.error("未找到現有 Profile 且未提供 BUNDLE_ID 環境變數，任務結束")
+        # 步驟 2: 根據 Bundle Identifier（config 來源）查詢 Apple bundle ID object
+        logger.info("\n=== 步驟 2: 根據 config 查詢 Apple Bundle ID ===")
+        if not bundle_id_identifier:
+            logger.error("未提供 BUNDLE_ID 環境變數，任務結束")
             set_github_output('success', 'false')
             sys.exit(1)
-        
-        # 步驟 4: 刪除現有 Provisioning Profile
+        logger.info(f"查詢 Bundle Identifier: {bundle_id_identifier}")
+        bundle_id = manager.find_bundle_id_by_identifier(bundle_id_identifier)
+        if not bundle_id:
+            logger.error(f"Apple 上找不到 Bundle ID '{bundle_id_identifier}'，任務結束")
+            set_github_output('success', 'false')
+            sys.exit(1)
+        logger.info(f"✅ Bundle ID: {bundle_id}")
+
+        # 步驟 3: 用 profile_name 找到舊 profile 並刪除
+        logger.info("\n=== 步驟 3: 刪除現有同名 Provisioning Profile ===")
+        existing_profiles = manager.find_all_provisioning_profiles(profile_name)
         device_ids = []
         if existing_profiles:
-            logger.info(f"\n=== 步驟 4: 刪除現有 Provisioning Profile ===")
-            logger.info(f"準備刪除 {len(existing_profiles)} 個現有 Profile...")
-            
-            # 刪除所有同名 Profile
+            logger.info(f"找到 {len(existing_profiles)} 個同名 Profile，準備刪除...")
             for profile in existing_profiles:
                 logger.info(f"刪除 Profile: {profile['name']} (ID: {profile['id']})")
                 if not manager.delete_provisioning_profile(profile['id']):
@@ -758,8 +739,7 @@ def main():
                     set_github_output('success', 'false')
                     sys.exit(1)
         else:
-            logger.info("\n=== 步驟 4: 未找到現有 Profile ===")
-            logger.info("將建立新的 Provisioning Profile")
+            logger.info("未找到同名 Profile，直接建立新 Profile")
         
         # 步驟 5: 獲取設備列表（如果需要）
         # 對於 Ad Hoc 或 Development profile，需要設備列表
