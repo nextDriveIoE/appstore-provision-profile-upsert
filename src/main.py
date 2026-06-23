@@ -717,31 +717,30 @@ def main():
         # 步驟 3: 決定要使用的 Bundle ID
         logger.info("\n=== 步驟 3: 決定 Bundle ID ===")
         bundle_id = None
-        
-        # 如果有現有 profile，優先沿用舊的 Bundle ID
-        if existing_profiles:
-            logger.info(f"找到 {len(existing_profiles)} 個現有 Profile")
-            # 嘗試從第一個 profile 取得 Bundle ID
-            old_bundle_id = existing_profiles[0].get('bundle_id')
-            if old_bundle_id:
-                bundle_id = old_bundle_id
-                logger.info(f"✅ 沿用現有 Profile 的 Bundle ID: {bundle_id}")
-            else:
-                logger.warning("⚠️  無法從現有 Profile 取得 Bundle ID，將使用環境變數指定的 Bundle ID")
-        
-        # 如果沒有現有 profile 或無法取得 Bundle ID，使用環境變數
-        if not bundle_id:
-            if not bundle_id_identifier:
-                logger.error("未找到現有 Profile 且未提供 BUNDLE_ID 環境變數，任務結束")
-                set_github_output('success', 'false')
-                sys.exit(1)
-            
+
+        # 有提供 BUNDLE_ID 環境變數時，永遠以 Apple API 查詢結果為準，避免沿用舊 profile 的錯誤 bundle
+        if bundle_id_identifier:
             logger.info(f"根據 Bundle Identifier 尋找 Bundle ID: {bundle_id_identifier}")
             bundle_id = manager.find_bundle_id_by_identifier(bundle_id_identifier)
             if not bundle_id:
                 logger.error("未找到對應的 Bundle ID，任務結束")
                 set_github_output('success', 'false')
                 sys.exit(1)
+        elif existing_profiles:
+            # 無 BUNDLE_ID 環境變數時，才從現有 profile 取得 Bundle ID（fallback）
+            logger.info(f"找到 {len(existing_profiles)} 個現有 Profile")
+            old_bundle_id = existing_profiles[0].get('bundle_id')
+            if old_bundle_id:
+                bundle_id = old_bundle_id
+                logger.info(f"✅ 沿用現有 Profile 的 Bundle ID: {bundle_id}")
+            else:
+                logger.error("無法取得 Bundle ID（未提供 BUNDLE_ID 且無法從現有 Profile 取得），任務結束")
+                set_github_output('success', 'false')
+                sys.exit(1)
+        else:
+            logger.error("未找到現有 Profile 且未提供 BUNDLE_ID 環境變數，任務結束")
+            set_github_output('success', 'false')
+            sys.exit(1)
         
         # 步驟 4: 刪除現有 Provisioning Profile
         device_ids = []
