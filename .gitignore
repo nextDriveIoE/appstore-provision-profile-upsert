@@ -69,10 +69,9 @@ AuthKey_*.p8
 private_keys/
 secrets/
 
-# Test files
-test_*.py
-*_test.py
-tests/
+# Test files（僅忽略根目錄的本地臨時測試腳本；正式單元測試放 tests/ 並納入版控）
+/test_*.py
+/*_test.py
 
 # Log files
 *.log
